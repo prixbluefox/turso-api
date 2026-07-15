@@ -4,19 +4,24 @@ import { createClient } from "@libsql/client/http";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const databaseUrl = process.env.TURSO_DATABASE_URL;
+// 1. Sanitize the URL to make sure the HTTP driver is happy
+let databaseUrl = process.env.TURSO_DATABASE_URL || "";
+if (databaseUrl.startsWith("libsql://")) {
+    databaseUrl = databaseUrl.replace("libsql://", "https://");
+}
+
 const databaseToken = process.env.TURSO_AUTH_TOKEN;
+const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-key-change-me";
 
 if (!databaseUrl || !databaseToken) {
     throw new Error("Missing critical Turso database environment variables.");
 }
 
+// 2. Initialize client with the sanitized HTTPS URL
 const turso = createClient({
     url: databaseUrl,
     authToken: databaseToken,
 });
-
-const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-key-change-me";
 
 interface UserRow {
     id: string;
