@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from "@libsql/client/web";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+// 🟢 Import the in-memory logger
+import { addLocalLog } from "@/app/api/lib/logger";
+
 
 const databaseUrl = process.env.TURSO_DATABASE_URL;
 const databaseToken = process.env.TURSO_AUTH_TOKEN;
@@ -26,6 +29,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         // Include pin in the required validation check
         if (!email || !password || !fullName || !businessName || !pin) {
+            addLocalLog("/api/auth/signup", "POST", 400, "Signup rejected: Missing required registration fields.");
             return NextResponse.json({ error: "Missing required registration parameters (including PIN)." }, { status: 400 });
         }
 
@@ -38,6 +42,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         });
 
         if (existingUserResult.rows.length > 0) {
+            addLocalLog("/api/auth/signup", "POST", 409, `Conflict: Account with email ${normalizedEmail} already exists.`);
             return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
         }
 
@@ -70,13 +75,20 @@ export async function POST(request: Request): Promise<NextResponse> {
         ];
 
         await turso.batch(statements, "write");
-        console.log(`✨ Successfully created tenant stack and injected baseline seeds for: ${normalizedEmail}`);
 
         // Sign session token
         const token = jwt.sign(
             { userId, role: 'OWNER', businessId, shopId },
             JWT_SECRET,
             { expiresIn: "30d" }
+        );
+
+        // 🟢 Log the complete tenant generation sequence
+        addLocalLog(
+            "/api/auth/signup",
+            "POST",
+            201,
+            `Tenant Seeded: ${normalizedEmail} registered business "${businessName}" successfully.`
         );
 
         return NextResponse.json({
@@ -87,6 +99,10 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     } catch (error: any) {
         console.error("❌ [SIGNUP SEED CRASH]:", error.message);
+
+        // 🟢 Log system level failures
+        addLocalLog("/api/auth/signup", "POST", 500, `CRITICAL SIGNUP FAILURE: ${error.message}`);
+
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
