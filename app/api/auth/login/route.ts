@@ -1,6 +1,6 @@
 // app/api/login/route.ts
 import { NextResponse } from 'next/server';
-import { createClient } from "@libsql/client/web";
+import { createClient } from "@libsql/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 // 🟢 Import your new local logger
