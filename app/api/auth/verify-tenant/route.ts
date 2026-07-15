@@ -1,6 +1,6 @@
 // app/api/auth/verify-tenant/route.ts
 import { NextResponse } from 'next/server';
-import { createClient } from "@libsql/client";
+import { createClient } from "@libsql/client/http";
 // 🟢 Import the in-memory logger
 import { addLocalLog } from "@/app/api/lib/logger";
 
