@@ -1,55 +1,68 @@
+// app/api/login/route.ts
+import { NextResponse } from 'next/server';
 import { createClient } from "@libsql/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+// 1. Initialize Turso Cloud Link with environment guardrails
+const databaseUrl = process.env.TURSO_DATABASE_URL;
+const databaseToken = process.env.TURSO_AUTH_TOKEN;
+
+if (!databaseUrl || !databaseToken) {
+    throw new Error("Missing critical Turso database environment variables.");
+}
+
 const turso = createClient({
-    url: process.env.TURSO_DATABASE_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN,
+    url: databaseUrl,
+    authToken: databaseToken,
 });
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-key-change-me";
 
-export async function POST(request) {
+// 2. Strong Typing for User Row from LibSQL/Turso
+interface UserRow {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    password_hash: string;
+    business_id: string | null;
+    shop_id: string | null;
+    [key: string]: any; // Catch-all fallback for other properties returning from rows
+}
+
+export async function POST(request: Request): Promise<NextResponse> {
     try {
         const { email, password } = await request.json();
 
         if (!email || !password) {
-            return new Response(JSON.stringify({ error: "Missing email or password" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-            });
+            return NextResponse.json({ error: "Missing email or password" }, { status: 400 });
         }
 
-        // 1. Locate user identity in Turso
+        // Locate user identity in Turso cloud matrix
         const userResult = await turso.execute({
             sql: "SELECT * FROM users WHERE email = ? LIMIT 1",
             args: [email.toLowerCase().trim()]
         });
 
         if (userResult.rows.length === 0) {
-            return new Response(JSON.stringify({ error: "Invalid credentials" }), {
-                status: 401,
-                headers: { "Content-Type": "application/json" },
-            });
+            return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
         }
 
-        const user = userResult.rows[0];
+        // Safely type-cast the database result row
+        const user = userResult.rows[0] as unknown as UserRow;
 
-        // 2. Verify hashed password
+        // Verify hashed passwords match perfectly
         const passwordMatch = await bcrypt.compare(password, user.password_hash);
         if (!passwordMatch) {
-            return new Response(JSON.stringify({ error: "Invalid credentials" }), {
-                status: 401,
-                headers: { "Content-Type": "application/json" },
-            });
+            return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
         }
 
-        // 3. Extract business and shop constraints linked to this account
-        // (If user is a worker, these will be populated from their row context)
-        let businessId = user.business_id;
-        let shopId = user.shop_id;
+        // Extract tenant operational boundaries
+        const businessId = user.business_id;
+        const shopId = user.shop_id;
 
-        // 4. Generate a session token embedding their isolated organizational parameters
+        // Generate organizational session payload token
         const token = jwt.sign(
             {
                 userId: user.id,
@@ -61,20 +74,20 @@ export async function POST(request) {
             { expiresIn: "30d" }
         );
 
-        // 5. Return success payload
-        return new Response(
-            JSON.stringify({
-                token,
-                user: { id: user.id, email: user.email, name: user.name, role: user.role },
-                context: { businessId, shopId }
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } }
-        );
+        // Return successfully wrapped payload parameters back to Expo client
+        return NextResponse.json({
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role
+            },
+            context: { businessId, shopId }
+        }, { status: 200 });
 
-    } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-        });
+    } catch (error: any) {
+        console.error("❌ [AUTH ROUTE CRASH]:", error.message);
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
