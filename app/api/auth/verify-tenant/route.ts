@@ -1,6 +1,6 @@
 // app/api/auth/verify-tenant/route.ts
 import { NextResponse } from 'next/server';
-import { createClient } from "@libsql/client";
+import { createClient } from "@libsql/client/web";
 
 const databaseUrl = process.env.TURSO_DATABASE_URL;
 const databaseToken = process.env.TURSO_AUTH_TOKEN;
