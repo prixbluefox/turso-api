@@ -3,9 +3,6 @@ import { NextResponse } from 'next/server';
 import { createClient } from "@libsql/client/http";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-// 🟢 Import the in-memory logger
-import { addLocalLog } from "@/app/api/lib/logger";
-
 
 const databaseUrl = process.env.TURSO_DATABASE_URL;
 const databaseToken = process.env.TURSO_AUTH_TOKEN;
@@ -24,12 +21,12 @@ const generateUUID = () => crypto.randomUUID();
 
 export async function POST(request: Request): Promise<NextResponse> {
     try {
-        // 🛠️ 1. Extract pin from incoming JSON payload
+        // Extract pin from incoming JSON payload
         const { email, password, fullName, businessName, pin } = await request.json();
 
         // Include pin in the required validation check
         if (!email || !password || !fullName || !businessName || !pin) {
-            addLocalLog("/api/auth/signup", "POST", 400, "Signup rejected: Missing required registration fields.");
+            console.warn("⚠️ [SIGNUP] Signup rejected: Missing required registration fields.");
             return NextResponse.json({ error: "Missing required registration parameters (including PIN)." }, { status: 400 });
         }
 
@@ -42,7 +39,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         });
 
         if (existingUserResult.rows.length > 0) {
-            addLocalLog("/api/auth/signup", "POST", 409, `Conflict: Account with email ${normalizedEmail} already exists.`);
+            console.warn(`⚠️ [SIGNUP] Conflict: Account with email ${normalizedEmail} already exists.`);
             return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
         }
 
@@ -66,7 +63,7 @@ export async function POST(request: Request): Promise<NextResponse> {
                       VALUES (?, ?, 'Main Branch', 1, 0);`,
                 args: [shopId, businessId]
             },
-            // 🛠️ Step C: Map the custom pin straight into the users table insertion query
+            // Step C: Map the custom pin straight into the users table insertion query
             {
                 sql: `INSERT INTO users (id, email, name, role, password_hash, pin, business_id, shop_id, created_at)
                       VALUES (?, ?, ?, 'OWNER', ?, ?, ?, ?, CURRENT_TIMESTAMP);`,
@@ -83,13 +80,7 @@ export async function POST(request: Request): Promise<NextResponse> {
             { expiresIn: "30d" }
         );
 
-        // 🟢 Log the complete tenant generation sequence
-        addLocalLog(
-            "/api/auth/signup",
-            "POST",
-            201,
-            `Tenant Seeded: ${normalizedEmail} registered business "${businessName}" successfully.`
-        );
+        console.log(`✨ [SIGNUP] Tenant Seeded: ${normalizedEmail} registered business "${businessName}" successfully.`);
 
         return NextResponse.json({
             token,
@@ -99,10 +90,6 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     } catch (error: any) {
         console.error("❌ [SIGNUP SEED CRASH]:", error.message);
-
-        // 🟢 Log system level failures
-        addLocalLog("/api/auth/signup", "POST", 500, `CRITICAL SIGNUP FAILURE: ${error.message}`);
-
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
